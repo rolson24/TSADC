@@ -4,78 +4,41 @@
 This repository contains the official implementation of the paper:
 
 **Contaminated Multivariate Time-Series Anomaly Detection with Spatio-Temporal Graph Conditional Diffusion Models**  
-Thi Kieu Khanh Ho, Narges Armanfard  
-Published at the 41st Conference on Uncertainty in Artificial Intelligence (UAI 2025)
+Accepted to the 41st Conference on Uncertainty in Artificial Intelligence (UAI 2025)
 
-[Paper Link (coming soon)]
+## Abstract
+Mainstream unsupervised anomaly detection algorithms often excel in academic datasets, yet their real-world performance is restricted due to the controlled experimental conditions involving clean training data. Addressing the challenge of training with noise, a prevalent issue in practical anomaly detection, is frequently overlooked. In a pioneering endeavor, this study delves into the realm of label-level noise within sensory time-series anomaly detection (TSAD). This paper presents a novel and practical end-to-end unsupervised TSAD when the training data is contaminated with anomalies. The introduced approach, called TSAD-C, is devoid of access to abnormality labels during the training phase. TSAD-C encompasses three core modules: a Decontaminator to rectify anomalies (aka noise) present during training, a Long-range Variable Dependency Modeling module to capture long-term intra- and inter-variable dependencies within the decontaminated data that is considered as a surrogate of the pure normal data, and an Anomaly Scoring module to detect anomalies from all types. Our extensive experiments conducted on four reliable and diverse datasets conclusively demonstrate that TSAD-C surpasses existing methodologies, thus establishing a new state-of-the-art in the TSAD field.
 
-## 📌 Overview
-We introduce a novel and practical end-to-end unsupervised method for anomaly detection in multivariate time-series, where training data may be contaminated with anomalies. Our model leverages a Spatio-Temporal Graph Conditional Diffusion Model (ST-GCDM) to robustly model complex dependencies in time-series data, enabling effective detection even under real-world data corruption.
 
-<p align="center"><img src="./model.png" alt="Model Architecture" width="600"/></p>
-
-## 🔍 Key Features
-- ✅ Handles contaminated training data with unknown anomaly labels.  
-- 🌐 Exploits spatial and temporal dependencies using a spatio-temporal graph.  
-- 🌫️ Employs a diffusion-based generative model for conditional sequence modeling.  
-- 🔍 Fully unsupervised: does not require clean or labeled training data.  
-
-## 🧠 Methodology
-Our approach models normal behavior using conditional diffusion and graph-based encoding of spatial and temporal relations. During inference, it uses reconstruction error and diffusion likelihoods for anomaly scoring.
+<p align="center"><img src="model.png" alt="Model Architecture" width="600"/></p>
 
 ## 📁 Repository Structure
 ```
-├── data/                   # Datasets or data processing scripts
-├── models/                 # Core model implementation (ST-GCDM)
+├── data/                   # Datasets 
+├── model/                  # Core model implementation
 ├── utils/                  # Utility functions
-├── train.py                # Training pipeline
-├── evaluate.py             # Evaluation and anomaly scoring
-├── config.yaml             # Experiment configurations
+├── main_run.py             # Training and evaluation pipeline
+├── args.py                 # Experiment configurations
 └── README.md
 ```
 
-## 🚀 Getting Started
+## Requirements
+- Python 3.9+
+- PyTorch >= 1.12
+- DGL or PyTorch Geometric
 
-### Requirements
-- Python 3.8+
-- PyTorch >= 1.11
-- DGL or PyTorch Geometric (for graph processing)
-- Other dependencies: see `requirements.txt`
+## Running the code
+Download the [SMD](https://github.com/NetManAIOps/OmniAnomaly), [ICBEB](https://github.com/helme/ecg_ptbxl_benchmarking), [DODH](https://github.com/Dreem-Organization/dreem-learning-open), and [TUSZ](https://isip.piconepress.com/projects/tuh_eeg/html/downloads.shtml) datasets and place them in the `data/` directory.
 
-### Installation
+To train and evaluate the model, run the command:
 ```bash
-git clone https://github.com/your_username/st-gcdm-anomaly-detection.git
-cd st-gcdm-anomaly-detection
-pip install -r requirements.txt
+python main_run.py 
 ```
 
-### Running the Model
+## License
+This project is licensed under the MIT License. See LICENSE for more details.
 
-**Training**
-```bash
-python train.py --config config.yaml
-```
-
-**Evaluation**
-```bash
-python evaluate.py --config config.yaml
-```
-
-## 📊 Datasets
-We test our method on several real-world multivariate time-series datasets with injected or naturally occurring anomalies. See the `data/` folder for download and preprocessing instructions.
-
-## 📈 Results
-Our method achieves state-of-the-art performance on multiple benchmark datasets under varying levels of contamination.
-
-| Dataset | F1 Score | AUC-ROC |
-|---------|----------|---------|
-| SWaT    | 0.91     | 0.96    |
-| SMD     | 0.89     | 0.94    |
-| WADI    | 0.88     | 0.93    |
-
-*(Full results available in the paper)*
-
-## 📚 Citation
+## Citation
 If you use this code or find our work helpful, please cite:
 ```bibtex
 @article{ho2023multivariate,
@@ -85,8 +48,3 @@ If you use this code or find our work helpful, please cite:
   year={2025}
 }
 ```
-
-## 🧩 Contact
-For questions or collaborations, feel free to reach out:
- 
-- Narges Armanfard - https://ismart.ece.mcgill.ca/
