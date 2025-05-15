@@ -1,3 +1,7 @@
+"""
+Some functions are adapted from the previous studies: https://github.com/HazyResearch/state-spaces
+
+"""
 
 import math
 import warnings

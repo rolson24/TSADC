@@ -1,3 +1,8 @@
+"""
+Some preprocessing functions are adapted from https://github.com/tsy935/graphs4mer/tree/main
+
+"""
+
 import sys
 import os
 import pytorch_lightning as pl
@@ -9,20 +14,16 @@ import torch
 import torch_geometric
 from torch.utils.data import ConcatDataset
 from torch_geometric.loader import DataLoader
-from torch_geometric.data import InMemoryDataset, Data
+from torch_geometric.data import InMemoryDataset, Data, Dataset
 from typing import Optional
 from tqdm import tqdm
-from data.data_utils import StandardScaler
+from sensors import TUH_FREQUENCY as FREQ
+from data.data_utils.general_data_utils import StandardScaler
 
 FILEMARKER_DIR = "data/data_tusz/data_and_labels"
-FREQ = 200
 
-"""
-Some preprocessing functions are adapted from https://github.com/tsy935/graphs4mer
 
-"""
-
-class TUSZ(InMemoryDataset):
+class TUSZDataset(InMemoryDataset):
     def __init__(
             self,
             root,
@@ -35,6 +36,7 @@ class TUSZ(InMemoryDataset):
             scaler=None,
             transform=None,
             pre_transform=None,
+            repreproc=False,
     ):
         self.root = root
         self.raw_data_path = raw_data_path
@@ -92,14 +94,14 @@ class TUSZ(InMemoryDataset):
                 continue
 
             with h5py.File(os.path.join(self.raw_data_path, h5_file_name), "r") as hf:
-                x = hf["resampled_signal"][()]  
+                x = hf["resampled_signal"][()]  # (num_nodes, time * freq)
             time_start_idx = clip_idx * int(FREQ * self.seq_len)
             time_end_idx = time_start_idx + int(FREQ * self.seq_len)
 
-            x = x[:, time_start_idx:time_end_idx] 
+            x = x[:, time_start_idx:time_end_idx]  # (num_nodes, seq_len*freq)
 
             assert x.shape[1] == FREQ * self.seq_len
-            x = np.expand_dims(x, axis=-1)  
+            x = np.expand_dims(x, axis=-1)  # (num_nodes, seq_len*freq, 1)
 
             # get edge index
             adj_mat = self._get_combined_graph()
@@ -144,7 +146,7 @@ class TUSZ(InMemoryDataset):
         return data
 
 
-class DataModule(pl.LightningDataModule):
+class TUSZ_DataModule(pl.LightningDataModule):
     def __init__(
             self,
             raw_data_path,
@@ -193,7 +195,7 @@ class DataModule(pl.LightningDataModule):
         else:
             self.scaler = None
 
-        self.train_dataset = TUSZ(
+        self.train_dataset = TUSZDataset(
             root=self.preproc_save_dir,
             raw_data_path=self.raw_data_path,
             file_marker=self.file_markers["train"],
@@ -206,7 +208,7 @@ class DataModule(pl.LightningDataModule):
             pre_transform=None,
         )
 
-        self.val_dataset = TUSZ(
+        self.val_dataset = TUSZDataset(
             root=self.preproc_save_dir,
             raw_data_path=self.raw_data_path,
             file_marker=self.file_markers["val"],
@@ -219,7 +221,7 @@ class DataModule(pl.LightningDataModule):
             pre_transform=None,
         )
 
-        self.test_dataset = TUSZ(
+        self.test_dataset = TUSZDataset(
             root=self.preproc_save_dir,
             raw_data_path=self.raw_data_path,
             file_marker=self.file_markers["test"],
@@ -288,3 +290,7 @@ class DataModule(pl.LightningDataModule):
             np.expand_dims(total_std, -1), -1
         )
 
+    def teardown(self, stage=None):
+        # clean up after fit or test
+        # called on every process in DDP
+        pass

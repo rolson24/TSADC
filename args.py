@@ -11,6 +11,7 @@ def str2bool(string):
     else:
         return False
 
+
 def get_args_tusz():
     parser = argparse.ArgumentParser(
         "TSADC with Contaminated Dta."
@@ -25,13 +26,18 @@ def get_args_tusz():
     parser.add_argument(
         "--gpus",
         type=int,
-        default=8,
+        default=0,
     )
     parser.add_argument(
         "--gpu_id",
+        default=[3],
         type=int,
-        default=[0],
+        nargs="+",
     )
+    parser.add_argument(
+        '--device',
+        type=str,
+        default='cuda:0')
     parser.add_argument(
         "--load_model_path",
         type=str,
@@ -95,7 +101,7 @@ def get_args_tusz():
     )
     parser.add_argument(
         "--num_res_layers",
-        default=16,
+        default=8,
     )
     parser.add_argument(
         "--res_channels",
@@ -111,11 +117,11 @@ def get_args_tusz():
     )
     parser.add_argument(
         "--diffusion_step_embed_dim_mid",
-        default=512,
+        default=128,
     )
     parser.add_argument(
         "--diffusion_step_embed_dim_out",
-        default=512,
+        default=128,
     )
     parser.add_argument(
         "--s4_max",

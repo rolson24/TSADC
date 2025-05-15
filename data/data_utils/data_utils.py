@@ -1,17 +1,37 @@
+"""
+Some preprocessing data functions are adapted https://github.com/tsy935/graphs4mer/tree/main
+
+"""
+
+
 import numpy as np
 import os
 import sys
 import torch
 import pandas as pd
 import h5py
+
+import os
 import pyedflib
 from scipy.signal import resample
+from sensors import TUH_LABEL_DICT
 
 
-"""
-Some preprocessing functions are adapted from https://github.com/tsy935/graphs4mer
+def read_dreem_data(data_dir, file_name):
+    with h5py.File(os.path.join(data_dir, file_name), "r") as f:
+        labels = f["hypnogram"][()]
 
-"""
+        signals = []
+        channels = []
+        for key in f["signals"].keys():
+            for ch in f["signals"][key].keys():
+                signals.append(f["signals"][key][ch][()])
+                channels.append(ch)
+    signals = np.stack(signals, axis=0)
+
+    return signals, channels, labels
+
+
 class StandardScaler:
     """
     Standardize the input

@@ -5,8 +5,10 @@ from torch.nn import MultiheadAttention
 from torch_geometric.nn import GINEConv
 import torch_geometric
 import scipy
+from model.model_dependency import *
+from utils.model_utils import *
 import math
-from model.model_utils import *
+
 
 class TSADC(nn.Module):
     def __init__(
@@ -51,8 +53,8 @@ class TSADC(nn.Module):
             res_channels = 256,
             skip_channels = 256,
             diffusion_step_embed_dim_in = 128,
-            diffusion_step_embed_dim_mid = 512,
-            diffusion_step_embed_dim_out = 512,
+            diffusion_step_embed_dim_mid = 128,
+            diffusion_step_embed_dim_out = 128,
             s4_max = 200,
             s4_d_state = 64,
             s4_dropout = 0.0,
@@ -141,7 +143,7 @@ class TSADC(nn.Module):
         )
 
 
-        # S4 layers
+        # temporal layer
         self.s4_layers = S4Model(
             d_input=input_dim,
             d_model=hidden_dim,
@@ -158,7 +160,7 @@ class TSADC(nn.Module):
             temporal_pool=None,
         )
 
-        # graph learning
+        # graph learning layer
         self.learn_graph = GraphLearner(
             input_size=hidden_dim,
             hidden_size=hidden_dim,
@@ -167,7 +169,7 @@ class TSADC(nn.Module):
             metric_type=metric,
         )
 
-        # GNN layers
+        # gnn layers
         self.gin_layers = nn.ModuleList()
         for _ in range(num_gnn_layers):
             if gin_mlp:
@@ -188,6 +190,10 @@ class TSADC(nn.Module):
             self.activation = nn.ReLU()
         elif activation_fn == "leaky_relu":
             self.activation = nn.LeakyReLU()
+        elif activation_fn == "elu":
+            self.activation = nn.ELU()
+        elif activation_fn == "gelu":
+            self.activation = nn.GELU()
         else:
             raise NotImplementedError
 
@@ -439,10 +445,7 @@ class TSADC(nn.Module):
         return x
 
 
-    """
-    Adapted from https://github.com/tsy935/graphs4mer
 
-    """
     def regularization_loss(self, x, adj, reduce="mean"):
 
         batch, num_nodes, _ = x.shape

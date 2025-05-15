@@ -16,9 +16,10 @@ from pytorch_lightning.callbacks import (
 import numpy as np
 from data.load_data.data_tusz import *
 from args import get_args_tusz
+
 from model.TSADC import *
 from utils.schedulers import *
-from model.model_utils import *
+from utils.model_utils import *
 from tqdm import tqdm
 from dotted_dict import DottedDict
 
@@ -227,6 +228,8 @@ class PLModel(pl.LightningModule):
             return (y, rec_mask_loss, reg_losses, rec_loss)
 
 
+
+
     def configure_optimizers(self):
         if self.optimizer_name == "adam":
             optimizer = optim.Adam(
@@ -265,7 +268,7 @@ def main(args):
     scaler = None
 
 
-    datamodule = DataModule(
+    datamodule = TUSZ_DataModule(
         raw_data_path=args.raw_data_dir,
         dataset_name=args.dataset,
         freq=args.sampling_freq,
@@ -325,26 +328,43 @@ def main(args):
 
         lr_monitor = LearningRateMonitor(logging_interval="step")
 
-        # train with multiple GPUs
-        trainer = pl.Trainer(
-            accelerator="gpu",
-            strategy=pl.strategies.DDPSpawnStrategy(
-                find_unused_parameters=False
-            ),
-            replace_sampler_ddp=False,
-            max_epochs=args.num_epochs,
-            max_steps=-1,
-            enable_progress_bar=True,
-            callbacks=[
-                checkpoint_callback,
-                early_stopping_callback,
-                lr_monitor,
-            ],
-            benchmark=False,
-            num_sanity_val_steps=0,
-            devices=torch.cuda.device_count(),
-            accumulate_grad_batches=args.accumulate_grad_batches,
-        )
+        if not (args.gpus > 1):
+            trainer = pl.Trainer(
+                accelerator="gpu",
+                max_epochs=args.num_epochs,
+                max_steps=-1,
+                enable_progress_bar=True,
+                callbacks=[
+                    checkpoint_callback,
+                    early_stopping_callback,
+                    lr_monitor,
+                ],
+                benchmark=False,
+                num_sanity_val_steps=0,
+                devices=args.gpu_id,  # default to 1 GPU
+                accumulate_grad_batches=args.accumulate_grad_batches,
+            )
+        else:
+            # distributed data parallel
+            trainer = pl.Trainer(
+                accelerator="gpu",
+                strategy=pl.strategies.DDPSpawnStrategy(
+                    find_unused_parameters=False
+                ),
+                replace_sampler_ddp=False,
+                max_epochs=args.num_epochs,
+                max_steps=-1,
+                enable_progress_bar=True,
+                callbacks=[
+                    checkpoint_callback,
+                    early_stopping_callback,
+                    lr_monitor,
+                ],
+                benchmark=False,
+                num_sanity_val_steps=0,
+                devices=torch.cuda.device_count(),
+                accumulate_grad_batches=args.accumulate_grad_batches,
+            )
 
         trainer.fit(pl_model, datamodule=datamodule)
         print("Training DONE!")
