@@ -88,6 +88,5 @@ If you use this code or find our work helpful, please cite:
 
 ## 🧩 Contact
 For questions or collaborations, feel free to reach out:
-
-- Thi Kieu Khanh Ho - [email or webpage]
-- Narges Armanfard - [email or webpage]
+ 
+- Narges Armanfard - https://ismart.ece.mcgill.ca/
