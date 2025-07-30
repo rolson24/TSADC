@@ -6,3 +6,6 @@ numpy
 pandas
 mne
 mne_bids
+lightning
+h5py
+pyEDFlib

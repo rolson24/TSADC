@@ -8,6 +8,7 @@ import pytorch_lightning as pl
 import pickle
 import numpy as np
 import pandas as pd
+import mne
 import torch
 import torch_geometric
 from torch.utils.data import ConcatDataset
@@ -15,7 +16,8 @@ from torch_geometric.loader import DataLoader
 from torch_geometric.data import InMemoryDataset, Data, Dataset
 from typing import Optional
 from tqdm import tqdm
-from data.data_utils.general_data_utils import StandardScaler
+from scipy import signal
+from data.data_utils.data_utils import StandardScaler
 
 FILEMARKER_DIR = "data/data_ieeg/data_and_labels"
 
@@ -27,7 +29,7 @@ class IEEGDataset(InMemoryDataset):
             raw_data_path,
             file_marker,
             split,
-            seq_len,
+            seq_len, # Window size I think?
             num_nodes,
             adj_mat_dir,
             freq=1000,  # Default frequency for iEEG
@@ -64,6 +66,7 @@ class IEEGDataset(InMemoryDataset):
             self.labels = self.file_marker["label"].tolist()
             self.clip_idxs = self.file_marker["clip_index"].tolist()
         else:
+            print(f"No file marker provided, scanning directory {self.raw_data_path} for files...")
             # Scan directory structure
             for patient_dir in os.listdir(self.raw_data_path):
                 patient_path = os.path.join(self.raw_data_path, patient_dir)
@@ -86,9 +89,12 @@ class IEEGDataset(InMemoryDataset):
                     else:
                         continue  # Skip files that don't match expected pattern
                     
-                    # Load file to determine number of possible clips
+                    # Check for existing resampled file first
                     full_path = os.path.join(self.raw_data_path, file_path)
-                    data_trace = self._load_ieeg_data(full_path)
+
+                    # Load data trace from original file
+                    data_trace, curr_freq = self._load_ieeg_data(full_path)
+
                     total_time_points = data_trace.shape[1]
                     clip_duration = int(self.freq * self.seq_len)
                     num_clips = total_time_points // clip_duration
@@ -98,6 +104,7 @@ class IEEGDataset(InMemoryDataset):
                         self.file_paths.append(file_path)
                         self.labels.append(label)
                         self.clip_idxs.append(clip_idx)
+
 
     @property
     def raw_file_names(self):
@@ -114,10 +121,18 @@ class IEEGDataset(InMemoryDataset):
 
     @property
     def processed_file_names(self):
-        return ["{}_clip{}.pt".format(
-            self.file_paths[idx].replace('.pkl', '').replace('.pickle', '').replace('/', '_'),
-            self.clip_idxs[idx]
-        ) for idx in range(len(self.file_paths))]
+        # Update to include all channels for each clip
+        processed_files = []
+        for idx in range(len(self.file_paths)):
+            base_fn = "{}_clip{}".format(
+                self.file_paths[idx].replace('.pkl', '').replace('.pickle', '').replace('/', '_'),
+                self.clip_idxs[idx]
+            )
+            # We don't know how many channels each file has at this point, so we'll 
+            # let the process method handle the actual file creation
+            # For now, just return a placeholder - the actual files will be created in process()
+            processed_files.append(f"{base_fn}_ch00.pt")
+        return processed_files
 
     def len(self):
         return len(self.file_paths)
@@ -136,10 +151,21 @@ class IEEGDataset(InMemoryDataset):
         """Load iEEG data from pickle file and extract data trace"""
         with open(file_path, 'rb') as file:
             data_obj = pickle.load(file)
-        
+
+        # print(f"Type of loaded data: {type(data_obj)}")
+        # resample the data to self.freq if it has type mne.io.Raw
+        if type(data_obj) == mne.io.array._array.RawArray:
+            data_obj = data_obj.resample(self.freq, npad="auto")
+            # print(f"Resampled data to {self.freq} Hz")
+
         # Extract data using get_data() method as shown in checkout_data.py
         data_trace = data_obj.get_data()
-        return data_trace
+        sample_rate = data_obj.info['sfreq'] if hasattr(data_obj, 'info') else 1000  # Default to 1000 Hz if not available
+
+        # print(f"Loaded data from {file_path} with shape {data_trace.shape} at {sample_rate} Hz")
+
+        return data_trace, sample_rate
+
 
     def process(self):
         for idx in tqdm(range(len(self.file_paths))):
@@ -158,9 +184,13 @@ class IEEGDataset(InMemoryDataset):
             ):
                 continue
 
-            # Load iEEG data from pickle file
+            # Load resampled data (should always exist now due to _build_file_list)
             full_file_path = os.path.join(self.raw_data_path, file_path)
-            x = self._load_ieeg_data(full_file_path)
+
+            x, curr_sfreq = self._load_ieeg_data(full_file_path)
+            
+            # Now curr_sfreq should equal self.freq
+            assert curr_sfreq == self.freq, f"Expected frequency {self.freq}, got {curr_sfreq}"
             
             # Assume data is in format (num_sensors, time_points)
             # Extract the specified time segment
@@ -170,54 +200,48 @@ class IEEGDataset(InMemoryDataset):
             x = x[:, time_start_idx:time_end_idx]  # (num_nodes, seq_len*freq)
 
             assert x.shape[1] == self.freq * self.seq_len
-            x = np.expand_dims(x, axis=-1)  # (num_nodes, seq_len*freq, 1)
-
-            # get edge index - handle variable number of nodes
-            actual_num_nodes = x.shape[0]
-            if self.adj_mat_dir and os.path.exists(self.adj_mat_dir):
-                adj_mat = self._get_combined_graph()
-                # Truncate or pad adjacency matrix to match actual number of nodes
-                if adj_mat.shape[0] != actual_num_nodes:
-                    if adj_mat.shape[0] > actual_num_nodes:
-                        adj_mat = adj_mat[:actual_num_nodes, :actual_num_nodes]
-                    else:
-                        # Pad with zeros if needed
-                        padded_adj = np.zeros((actual_num_nodes, actual_num_nodes))
-                        padded_adj[:adj_mat.shape[0], :adj_mat.shape[1]] = adj_mat
-                        adj_mat = padded_adj
-            else:
-                # Create identity matrix if no adjacency matrix provided
-                adj_mat = np.eye(actual_num_nodes)
+            
+            # Process each channel separately instead of all channels together
+            for channel_idx in range(x.shape[0]):
+                # Extract single channel data
+                single_channel_x = x[channel_idx, :]  # (1, seq_len*freq)
+                single_channel_x = np.expand_dims(single_channel_x, axis=-1)  # (1, seq_len*freq, 1)
                 
-            edge_index, edge_weight = torch_geometric.utils.dense_to_sparse(
-                torch.FloatTensor(adj_mat)
-            )
+                # Create identity matrix for single channel (1x1 identity matrix)
+                adj_mat = np.eye(1)
+                
+                edge_index, edge_weight = torch_geometric.utils.dense_to_sparse(
+                    torch.FloatTensor(adj_mat)
+                )
 
-            # pyg graph
-            x = torch.FloatTensor(x)  # (num_nodes, seq_len*freq, 1)
-            y = torch.LongTensor([y])  # Use LongTensor for multi-class
-            data = Data(
-                x=x,
-                edge_index=edge_index.contiguous(),
-                edge_attr=edge_weight,
-                y=y,
-                adj_mat=torch.FloatTensor(adj_mat).unsqueeze(0),
-            )
+                # pyg graph for single channel
+                single_channel_x = torch.FloatTensor(single_channel_x)  # (1, seq_len*freq, 1)
+                y_tensor = torch.LongTensor([y])  # Use LongTensor for multi-class
+                data = Data(
+                    x=single_channel_x,
+                    edge_index=edge_index.contiguous(),
+                    edge_attr=edge_weight,
+                    y=y_tensor,
+                    adj_mat=torch.FloatTensor(adj_mat).unsqueeze(0),
+                )
 
-            data.writeout_fn = writeout_fn
+                # Create unique filename for each channel
+                channel_writeout_fn = f"{writeout_fn}_ch{channel_idx:02d}"
+                data.writeout_fn = channel_writeout_fn
 
-            torch.save(
-                data,
-                os.path.join(self.processed_dir, "{}.pt".format(writeout_fn)),
-            )
+                torch.save(
+                    data,
+                    os.path.join(self.processed_dir, "{}.pt".format(channel_writeout_fn)),
+                )
 
     def get(self, idx):
-
+        # This method needs to be updated to handle the channel-based file naming
+        # For now, we'll assume we want the first channel (ch00)
         file_path = self.file_paths[idx]
         y = self.labels[idx]
         clip_idx = self.clip_idxs[idx]
 
-        writeout_fn = "{}_clip{}".format(
+        writeout_fn = "{}_clip{}_ch00".format(
             file_path.replace('.pkl', '').replace('.pickle', '').replace('/', '_'),
             clip_idx
         )
@@ -404,7 +428,7 @@ class IEEG_DataModule(pl.LightningDataModule):
                 # Pad signal to max_nodes if necessary
                 if signal.shape[0] < max_nodes:
                     padded_signal = np.zeros((max_nodes, signal.shape[1]))
-                    padded_signal[:signal.shape[0], :] = signal
+                    padded_signal[:signal.shape[0], :signal.shape[1]] = signal
                     signal = padded_signal
                 
                 signal_sum += signal.sum(axis=-1)

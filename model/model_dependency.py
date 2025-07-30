@@ -3395,11 +3395,11 @@ class Residual_block(nn.Module):
             skip_channels,
             diffusion_step_embed_dim_out,
             in_channels,
-             s4_lmax,
-             s4_d_state,
-             s4_dropout,
-             s4_bidirectional,
-             s4_layernorm
+            s4_lmax,
+            s4_d_state,
+            s4_dropout,
+            s4_bidirectional,
+            s4_layernorm
     ):
         super(Residual_block, self).__init__()
         self.res_channels = res_channels
@@ -3466,15 +3466,15 @@ class Residual_group(nn.Module):
             res_channels,
             skip_channels,
             num_res_layers,
-             diffusion_step_embed_dim_in,
-             diffusion_step_embed_dim_mid,
-             diffusion_step_embed_dim_out,
-             in_channels,
-             s4_lmax,
-             s4_d_state,
-             s4_dropout,
-             s4_bidirectional,
-             s4_layernorm
+            diffusion_step_embed_dim_in,
+            diffusion_step_embed_dim_mid,
+            diffusion_step_embed_dim_out,
+            in_channels,
+            s4_lmax,
+            s4_d_state,
+            s4_dropout,
+            s4_bidirectional,
+            s4_layernorm
     ):
         super(Residual_group, self).__init__()
         self.num_res_layers = num_res_layers
@@ -3517,15 +3517,15 @@ class Decontaminator(nn.Module):
             res_channels,
             skip_channels,
             out_channels,
-             num_res_layers,
-             diffusion_step_embed_dim_in,
-             diffusion_step_embed_dim_mid,
-             diffusion_step_embed_dim_out,
-             s4_lmax,
-             s4_d_state,
-             s4_dropout,
-             s4_bidirectional,
-             s4_layernorm
+            num_res_layers,
+            diffusion_step_embed_dim_in,
+            diffusion_step_embed_dim_mid,
+            diffusion_step_embed_dim_out,
+            s4_lmax,
+            s4_d_state,
+            s4_dropout,
+            s4_bidirectional,
+            s4_layernorm
     ):
         super(Decontaminator, self).__init__()
 

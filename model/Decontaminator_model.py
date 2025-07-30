@@ -84,38 +84,38 @@ class TSADC(nn.Module):
         self.regularizations = regularizations
         self.residual_weight = residual_weight
         self.temporal_pool = temporal_pool
-        self.max_seq_len = max_seq_len
+        # self.max_seq_len = max_seq_len
         self.interval = interval
         self.prune_method = prune_method
         self.thresh = thresh
         self.masking = masking
         self.masking_r = masking_r
         self.masking_r_test = masking_r_test
-        self. diffuse_T = diffuse_T
+        self.diffuse_T = diffuse_T
         self.diffuse_beta_0 = diffuse_beta_0
         self.diffuse_beta_T = diffuse_beta_T
-        self.in_channels = in_channels,
-        self.out_channels = out_channels,
-        self.num_res_layers = num_res_layers,
-        self.res_channels = res_channels,
-        self.skip_channels = skip_channels,
-        self.diffusion_step_embed_dim_in = diffusion_step_embed_dim_in,
-        self.diffusion_step_embed_dim_mid = diffusion_step_embed_dim_mid,
-        self.diffusion_step_embed_dim_out = diffusion_step_embed_dim_out,
-        self.s4_max = s4_max,
-        self.s4_d_state = s4_d_state,
-        self.s4_dropout = s4_dropout,
-        self.s4_bidirectional = s4_bidirectional,
-        self.s4_layernorm = s4_layernorm,
-        self.feature_smoothing_weight = feature_smoothing_weight,
-        self.degree_weight = degree_weight,
-        self.sparse_weight = sparse_weight,
-        self.step_in_seq = step_in_seq,
-        self.step_in_seq_test = step_in_seq_test,
-        self.test_samples = test_samples,
-        self.lambda_1 = lambda_1,
-        self.lambda_2 = lambda_2,
-        self.tau = tau,
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.num_res_layers = num_res_layers
+        self.res_channels = res_channels
+        self.skip_channels = skip_channels
+        self.diffusion_step_embed_dim_in = diffusion_step_embed_dim_in
+        self.diffusion_step_embed_dim_mid = diffusion_step_embed_dim_mid
+        self.diffusion_step_embed_dim_out = diffusion_step_embed_dim_out
+        self.s4_max = s4_max
+        self.s4_d_state = s4_d_state
+        self.s4_dropout = s4_dropout
+        self.s4_bidirectional = s4_bidirectional
+        self.s4_layernorm = s4_layernorm
+        self.feature_smoothing_weight = feature_smoothing_weight
+        self.degree_weight = degree_weight
+        self.sparse_weight = sparse_weight
+        self.step_in_seq = step_in_seq
+        self.step_in_seq_test = step_in_seq_test
+        self.test_samples = test_samples
+        self.lambda_1 = lambda_1
+        self.lambda_2 = lambda_2
+        self.tau = tau
 
 
 
@@ -193,6 +193,7 @@ class TSADC(nn.Module):
 
             x_tmp = batch, batch, mask, not_mask
 
+            # Train the decontaminator (by adding noise and reconstructing a masked version of the input)
             pred_masked_x, loss_noise = self.rec_mask_loss(
                 self.rec_mask_model,
                 nn.MSELoss(),
@@ -231,9 +232,9 @@ class TSADC(nn.Module):
             sampled_x = torch.cat(sampled_x, dim=1)
             mask_sampled = torch.cat(mask_sampled, dim=1)
 
-            pred_x = torch.cat(pred_x, dim=1)
+            # pred_x = torch.cat(pred_masked_x, dim=1) # Replaced with sampled_x because we don't have the rest of the model
             logits = torch.cat(logits, dim=1)
-            return (sampled_x, mask_sampled, pred_x, logits)
+            return (sampled_x, mask_sampled, sampled_x, logits)
 
     def rec_mask_loss(self, rec_mask_net, loss_fn, X, diffusion_hyperparams):
 
