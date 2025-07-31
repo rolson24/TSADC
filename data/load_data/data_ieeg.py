@@ -59,12 +59,18 @@ class IEEGDataset(InMemoryDataset):
         self.file_paths = []
         self.labels = []
         self.clip_idxs = []
+        self.channel_idxs = []  # Add channel index tracking
         
         # If file_marker is provided, use it; otherwise scan directory
         if self.file_marker is not None and not self.file_marker.empty:
             self.file_paths = self.file_marker["file_path"].tolist()
             self.labels = self.file_marker["label"].tolist()
             self.clip_idxs = self.file_marker["clip_index"].tolist()
+            # Handle channel indices if they exist in file marker
+            if "channel_index" in self.file_marker.columns:
+                self.channel_idxs = self.file_marker["channel_index"].tolist()
+            else:
+                self.channel_idxs = [0] * len(self.file_paths)  # Default to channel 0
         else:
             print(f"No file marker provided, scanning directory {self.raw_data_path} for files...")
             # Scan directory structure
@@ -80,31 +86,31 @@ class IEEGDataset(InMemoryDataset):
                     file_path = os.path.join(patient_dir, file_name)
                     
                     # Extract label from filename
-                    if 'preictal' in file_name:
+                    if '_preictal_' in file_name:
                         label = 0
-                    elif 'ictal' in file_name:
+                    elif '_ictal_' in file_name:
                         label = 1
-                    elif 'postictal' in file_name:
+                    elif '_postictal_' in file_name:
                         label = 2
                     else:
                         continue  # Skip files that don't match expected pattern
                     
-                    # Check for existing resampled file first
-                    full_path = os.path.join(self.raw_data_path, file_path)
-
                     # Load data trace from original file
+                    full_path = os.path.join(self.raw_data_path, file_path)
                     data_trace, curr_freq = self._load_ieeg_data(full_path)
 
                     total_time_points = data_trace.shape[1]
                     clip_duration = int(self.freq * self.seq_len)
                     num_clips = total_time_points // clip_duration
+                    num_channels = data_trace.shape[0]
                     
-                    # Add entries for each possible clip
+                    # Add entries for each possible clip and channel combination
                     for clip_idx in range(num_clips):
-                        self.file_paths.append(file_path)
-                        self.labels.append(label)
-                        self.clip_idxs.append(clip_idx)
-
+                        for channel_idx in range(num_channels):
+                            self.file_paths.append(file_path)
+                            self.labels.append(label)
+                            self.clip_idxs.append(clip_idx)
+                            self.channel_idxs.append(channel_idx)
 
     @property
     def raw_file_names(self):
@@ -121,17 +127,15 @@ class IEEGDataset(InMemoryDataset):
 
     @property
     def processed_file_names(self):
-        # Update to include all channels for each clip
+        # Now we can accurately list all channel files since we track channels in _build_file_list
         processed_files = []
         for idx in range(len(self.file_paths)):
-            base_fn = "{}_clip{}".format(
+            base_fn = "{}_clip{}_ch{:02d}.pt".format(
                 self.file_paths[idx].replace('.pkl', '').replace('.pickle', '').replace('/', '_'),
-                self.clip_idxs[idx]
+                self.clip_idxs[idx],
+                self.channel_idxs[idx]
             )
-            # We don't know how many channels each file has at this point, so we'll 
-            # let the process method handle the actual file creation
-            # For now, just return a placeholder - the actual files will be created in process()
-            processed_files.append(f"{base_fn}_ch00.pt")
+            processed_files.append(base_fn)
         return processed_files
 
     def len(self):
@@ -168,43 +172,50 @@ class IEEGDataset(InMemoryDataset):
 
 
     def process(self):
+        # Group processing by unique file+clip combinations to avoid reloading the same data
+        processed_combinations = set()
+        
         for idx in tqdm(range(len(self.file_paths))):
-
             file_path = self.file_paths[idx]
             y = self.labels[idx]
             clip_idx = self.clip_idxs[idx]
-
+            
+            # Create a unique key for this file+clip combination
+            file_clip_key = (file_path, clip_idx)
+            
+            if file_clip_key in processed_combinations:
+                continue  # Already processed all channels for this file+clip
+            
+            processed_combinations.add(file_clip_key)
+            
             writeout_fn = "{}_clip{}".format(
                 file_path.replace('.pkl', '').replace('.pickle', '').replace('/', '_'),
                 clip_idx
             )
 
-            if os.path.exists(
-                    os.path.join(self.processed_dir, "{}.pt".format(writeout_fn))
-            ):
-                continue
-
-            # Load resampled data (should always exist now due to _build_file_list)
+            # Load resampled data
             full_file_path = os.path.join(self.raw_data_path, file_path)
-
             x, curr_sfreq = self._load_ieeg_data(full_file_path)
             
             # Now curr_sfreq should equal self.freq
             assert curr_sfreq == self.freq, f"Expected frequency {self.freq}, got {curr_sfreq}"
             
-            # Assume data is in format (num_sensors, time_points)
             # Extract the specified time segment
             time_start_idx = clip_idx * int(self.freq * self.seq_len)
             time_end_idx = time_start_idx + int(self.freq * self.seq_len)
-
             x = x[:, time_start_idx:time_end_idx]  # (num_nodes, seq_len*freq)
-
             assert x.shape[1] == self.freq * self.seq_len
             
-            # Process each channel separately instead of all channels together
+            # Process each channel separately
             for channel_idx in range(x.shape[0]):
+                # Check if this specific channel file already exists
+                channel_writeout_fn = f"{writeout_fn}_ch{channel_idx:02d}"
+                if os.path.exists(os.path.join(self.processed_dir, "{}.pt".format(channel_writeout_fn))):
+                    continue
+                
                 # Extract single channel data
-                single_channel_x = x[channel_idx, :]  # (1, seq_len*freq)
+                single_channel_x = x[channel_idx, :]  # (seq_len*freq,)
+                single_channel_x = np.expand_dims(single_channel_x, axis=0)  # (1, seq_len*freq)
                 single_channel_x = np.expand_dims(single_channel_x, axis=-1)  # (1, seq_len*freq, 1)
                 
                 # Create identity matrix for single channel (1x1 identity matrix)
@@ -225,8 +236,6 @@ class IEEGDataset(InMemoryDataset):
                     adj_mat=torch.FloatTensor(adj_mat).unsqueeze(0),
                 )
 
-                # Create unique filename for each channel
-                channel_writeout_fn = f"{writeout_fn}_ch{channel_idx:02d}"
                 data.writeout_fn = channel_writeout_fn
 
                 torch.save(
@@ -235,18 +244,19 @@ class IEEGDataset(InMemoryDataset):
                 )
 
     def get(self, idx):
-        # This method needs to be updated to handle the channel-based file naming
-        # For now, we'll assume we want the first channel (ch00)
+        # Now we can directly use the tracked indices
         file_path = self.file_paths[idx]
         y = self.labels[idx]
         clip_idx = self.clip_idxs[idx]
+        channel_idx = self.channel_idxs[idx]
 
-        writeout_fn = "{}_clip{}_ch00".format(
+        writeout_fn = "{}_clip{}_ch{:02d}".format(
             file_path.replace('.pkl', '').replace('.pickle', '').replace('/', '_'),
-            clip_idx
+            clip_idx,
+            channel_idx
         )
 
-        data = torch.load(os.path.join(self.processed_dir, "{}.pt".format(writeout_fn)))
+        data = torch.load(os.path.join(self.processed_dir, "{}.pt".format(writeout_fn)), weights_only=False)
 
         if self.scaler is not None:
             # standardize
